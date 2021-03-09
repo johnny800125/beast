@@ -1,0 +1,257 @@
+---
+title: "homework 5"
+author: "張華軒"
+date: "2020/11/29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(leaps)
+```
+
+
+### 8-a
+
+```{r}
+set.seed(12345)
+x = rnorm(100,0,1)
+error = rnorm(100,0,1)
+```
+-先亂數產出100項X與$\epsilon$
+
+### 8-b
+
+```{r}
+simy = 1+2*x+3*x^2+4*x^3+error
+```
+- 給定$\beta_0$、$\beta_1$、$\beta_2$、$\beta_3$分別為1、2、3、4
+
+
+### 8-c
+```{r}
+data = matrix(rep(0,100*10),ncol=10)
+data[,1] = x
+for(i in 2:10){
+  data[,i] = x^i
+}
+data = as.data.frame(data)
+data = cbind(simy,data)
+colnames(data) = c("y",paste("x",1:10))
+subfit <- regsubsets(y~ ., data=data, nvmax=10) 
+subsum = summary(subfit)
+
+
+par(mfrow=c(2,2))
+
+plot(subsum$cp, type="l", col=4, xlab = "# Variables", ylab = "Mallows Cp") 
+points(which.min(subsum$cp),subsum$cp[which.min(subsum$cp)], col=4, pch = 15, cex=2)
+
+plot(subsum$bic, type="l", col=6, xlab = "# Variables", ylab = "Bayes Information Criterion")
+points(which.min(subsum$bic),subsum$bic[which.min(subsum$bic)], col=6, pch = 16, cex=2)
+
+plot(subsum$adjr2, type="l", col=3, xlab = "# Variables", ylab = "Adjusted R Squared")
+points(which.max(subsum$adjr2),subsum$adjr2[which.max(subsum$adjr2)], col=3, pch = 17, cex=2)
+
+coef(subfit,which.min(subsum$bic))
+```
+- 由圖可以看出來用了三個指標CP、BIC、$R^2$，去判斷模型須放幾個變數，CP及BIC支持放四個變數，接著Best subset selection選擇$X$、$X^2$、$X^3$、$X^5$，而真實模式為$X$、$X^2$、$X^3$。
+
+d
+```{r}
+subfit <- regsubsets(y~ ., data=data, nvmax=10,method = "forward") 
+subsum = summary(subfit)
+
+
+par(mfrow=c(2,2))
+
+plot(subsum$cp, type="l", col=4, xlab = "# Variables", ylab = "Mallows Cp") 
+points(which.min(subsum$cp),subsum$cp[which.min(subsum$cp)], col=4, pch = 15, cex=2)
+
+plot(subsum$bic, type="l", col=6, xlab = "# Variables", ylab = "Bayes Information Criterion")
+points(which.min(subsum$bic),subsum$bic[which.min(subsum$bic)], col=6, pch = 16, cex=2)
+
+plot(subsum$adjr2, type="l", col=3, xlab = "# Variables", ylab = "Adjusted R Squared")
+points(which.max(subsum$adjr2),subsum$adjr2[which.max(subsum$adjr2)], col=3, pch = 17, cex=2)
+
+coef(subfit,which.min(subsum$bic))
+```
+- Forward Selection的CP及BIC一樣也支持放四個變數，同樣也選$X$、$X^2$、$X^3$、$X^5$。
+
+
+```{r}
+subfit <- regsubsets(y~ ., data=data, nvmax=10,method = "backward") 
+subsum = summary(subfit)
+
+
+par(mfrow=c(2,2))
+
+plot(subsum$cp, type="l", col=4, xlab = "# Variables", ylab = "Mallows Cp") 
+points(which.min(subsum$cp),subsum$cp[which.min(subsum$cp)], col=4, pch = 15, cex=2)
+
+plot(subsum$bic, type="l", col=6, xlab = "# Variables", ylab = "Bayes Information Criterion")
+points(which.min(subsum$bic),subsum$bic[which.min(subsum$bic)], col=6, pch = 16, cex=2)
+
+plot(subsum$adjr2, type="l", col=3, xlab = "# Variables", ylab = "Adjusted R Squared")
+points(which.max(subsum$adjr2),subsum$adjr2[which.max(subsum$adjr2)], col=3, pch = 17, cex=2)
+
+coef(subfit,which.min(subsum$bic))
+```
+- Backward Selection的CP及BIC一樣也支持放四個變數，同樣也選$X$、$X^2$、$X^3$、$X^5$。
+
+
+
+```{r}
+library(glmnet)
+library(rsample)
+```
+e
+```{r}
+split = initial_split(data = data,prop = 0.8)
+train = training(split)
+trainx = as.matrix(train[,2:11])
+trainy = as.matrix(train[,1])
+test = testing(split)
+cv = cv.glmnet(trainx,trainy,alpha = 1)
+plot(cv)
+lambda = cv$lambda.1se
+(lambda)
+
+result = glmnet(as.matrix(data[,-1]),as.matrix(simy),alpha = 1)
+predict(result,type = "coefficients",s = lambda)
+```
+- 我們選擇距離最小Lambda一個標準差的Lambda.1se，也就是$\lambda$ = 0.2062，接著把這個$\lambda$代入Lasso，發現$X$、$X^2$、$X^3$、$X^4$、$X^5$以外的參數係數皆reduce至0。
+
+```{r}
+y2 = 1+2.5*x^7+error
+data2 = cbind(y2,data[,2:11])
+colnames(data2) = c("y",paste("x",1:10))
+subfit2 = regsubsets(y~.,data = data2,nvmax = 10)
+subsum2 = summary(subfit2)
+
+par(mfrow=c(2,2))
+
+plot(subsum2$cp, type="l", col=4, main = "Y=B0 + B7X^7 + err  Best Subset", xlab = "# Variables", ylab = "Mallows Cp") 
+points(which.min(subsum2$cp),subsum2$cp[which.min(subsum2$cp)], col=4, pch = 15, cex=2)
+
+plot(subsum2$bic, type="l", col=6, main = "Y=B0 + B7X^7 + err  Best Subset", xlab = "# Variables", ylab = "Bayes Information Criterion")
+points(which.min(subsum2$bic),subsum2$bic[which.min(subsum2$bic)], col=6, pch = 16, cex=2)
+
+plot(subsum2$adjr2, type="l", col=3, xlab = "# Variables", ylab = "Adjusted R Squared")
+points(which.max(subsum2$adjr2),subsum2$adjr2[which.max(subsum2$adjr2)], col=3, pch = 17, cex=2)
+
+coef(subfit2,which.min(subsum2$cp))
+
+coef(subfit2,which.min(subsum2$bic))
+coef(subfit2,which.max(subsum2$adjr2))
+
+split2 = initial_split(data2,0.8)
+train2 = training(split2)
+test2 = testing(split2)
+train2 = as.matrix(train2)
+cv2 = cv.glmnet(train2[,2:11],train2[,1])
+plot(cv2,main = "Y=B0 + B7X^7 + err Lasso")
+predict(cv2,type = "coefficients",s = lambda)
+```
+- 可以看出CP、BIC支持模型放一個變數，而$R^2$支持放四個，而Lasso最後的結果是放一個變數，其餘reduce至0，再這邊看CP及BIC表現得最好，因為其係數最接近真實模式，雖然Lasso挑對變數，但其係數還是差了一點。
+
+
+### 10-a
+
+```{r}
+set.seed(1234)
+x = matrix(rnorm(1000*20),ncol = 20)
+set.seed(1234)
+beta = rnorm(20)
+beta[c(7,9,15,20)] = 0
+set.seed(1234)
+error = rnorm(1000)
+y = x%*%beta+error
+
+data = cbind(y,x)
+xname = paste("x",1:20)
+colnames(data) = c("y",xname)
+data = as.data.frame(data)
+```
+- 先產出20個features各1000個亂數，再令$\beta_7$、$\beta_9$、$\beta_15$、$\beta_20$為0
+
+### 10-b
+```{r}
+set.seed(1234)
+split = initial_split(data,prop = round(899/1000,3))
+train = training(split)
+test = testing(split)
+```
+- 將全部樣本切割為900個training data及100個testing data
+
+### 10-c
+
+```{r}
+subfit = regsubsets(y~.,data = train,nvmax = 20)
+
+train.mat = model.matrix(y ~ ., data = train, nvmax = 20)
+
+trainmse = rep(NA, 20)
+for (i in 1:20) {
+    coefi <- coef(subfit, id = i)
+    pred <- train.mat[, names(coefi)] %*% coefi
+    trainmse[i] <- mean((pred - train$y)^2)
+}
+
+plot(trainmse , main ="Subset Selection MSE",xlab = "Number of Predictor", ylab = "Training MSE",type = "b")
+```
+- 執行best subset selection，且畫出放入不同參數數量的training MSE，大致可以看出來模型的複雜度越高，其Training MSE便會指數型下降。
+
+
+###　10-d
+
+```{r}
+test.mat = model.matrix(y ~ ., data = test, nvmax = 20)
+testmse = rep(NA, 20)
+for (i in 1:20) {
+    coefi <- coef(subfit, id = i)
+    pred <- test.mat[, names(coefi)] %*% coefi
+    testmse[i] <- mean((pred - test$y)^2)
+}
+
+plot(testmse , main ="Subset Selection MSE",xlab = "Number of Predictor", ylab = "Testing MSE",type = "b")
+
+
+```
+- 將剛剛用Training data的best subset selection估計出來的$\beta$值們套入testing data，且畫出放入不同參數數量的testing MSE，大致可以看出來模型的複雜度越高，其testing MSE便會指數型下降。
+
+
+### 10-e
+
+```{r}
+which.min(testmse)
+
+```
+- 可以看出來模型放16個參數，其testing MSE將會最小。
+
+### 10-f
+
+```{r}
+coef(subfit,which.min(testmse))
+```
+- 可以看出來best subset selection的最小MSE一樣可以挑出我們一開始
+令$\beta_7$、$\beta_9$、$\beta_15$、$\beta_20$為0，並且把他們移出模型。
+
+### 10-f
+
+```{r}
+xcol = colnames(data[,2:21],prefix = "x")
+mse2 = rep(NA, 20)
+for (i in 1:20) {
+    coefi <- coef(subfit, id = i)
+    mse2[i] <- sqrt(sum((beta[xcol %in%  gsub('^.|.$', '', names(coefi))] - coefi[gsub('^.|.$', '', names(coefi)) %in% xcol])^2) + sum(beta[!(xcol %in% gsub('^.|.$', '', names(coefi)))])^2)
+  }
+plot(mse2,type = "b" )
+which.min(mse2)
+
+```
+- 可以看的出來$\beta$的error在只放9個變數時最小，接著到14個變數時開始慢慢收斂，但是最小Testing MSE為放15個變數，因此我們可以說beta值越接近真實模式的時候不一定代表MSE最小，反之MSE最小不代表Beta值越接近。
+

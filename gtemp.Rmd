@@ -1,0 +1,189 @@
+---
+title: 'Demo: State-space modeling and Kalman filter'
+date: "2020/5/28"
+output: html_document
+---
+
+#### Global Temperature Deviations (source: SS TextBook, Example 6.2)
+
+Two yearly temperature anomaly series from different data source:
+
+* `hpreal`: the global mean land-ocean temperature index data
+
+* `hpfitted`: the surface air temperature index data using only meteorological station data
+
+Conceptually, both series should be measuring the same underlying climatic signal. 
+
+Goal: to extract this underlying signal based on both series.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning=FALSE, message=FALSE}
+#load package
+library(astsa)
+hpreal = ts((dif.data[8:125,1]),start = c(2008,11),frequency = 12)
+hpfitted = ts(var$varresult$price$fitted.values[1:118],start = c(2008,11),frequency = 12)
+
+
+  par(mar=c(2,2.5,.5,.5)+.5, mgp=c(1.6,.6,0))
+  ts.plot(hpreal, hpfitted, ylab=" index return", xlab="Time", main='', type='n')
+  grid(lty=1, col=gray(.9))
+  lines(hpreal,  lwd=2, col = 4)
+  lines(hpfitted, lwd=2, col = 3)
+  legend('topleft', col=c(4,3), lty=1, lwd=2
+  ,legend=c("price", "fitted price"), bg='white', bty="n")  
+#dev.off()
+
+  y = cbind(hpreal,hpfitted) 
+  dim(y)
+
+  num = nrow(y)
+  input = rep(1,num)
+
+  A = array(rep(1,2), dim=c(2,1,num))
+  mu0 = -.3; Sigma0 = 1;  Phi = 1
+
+# Function to Calculate -logL
+  neglogL = function(para){
+    cQ = para[1]     # sigma_w = chol(Q)
+    cR1 = para[2]    # 11 element of chol(R)
+    cR2 = para[3]    # 22 element of chol(R)
+    cR12 = para[4]   # 12 element of chol(R)
+    cR = matrix(c(cR1,0,cR12,cR2),2)  # upper triangular matrix
+    drift = para[5]  # delta
+    kf = Kfilter1(num,y,A,mu0,Sigma0,Phi=1,drift,0,cQ,cR,input)
+    return(kf$like) 
+  }
+
+
+
+  init.par = c(0.1, 0.1, 0.1, 0, 0.05)  # initial values of parameters
+
+  est = optim(init.par, neglogL, method="BFGS", hessian=TRUE, control=list(trace=1,REPORT=1,maxit = 50000))
+
+  names(est) #check output
+
+# final ML estimates
+  cQ=est$par[1]
+  cR1=est$par[2]
+  cR2=est$par[3]
+  cR12=est$par[4]
+  cR = matrix(c(cR1,0,cR12,cR2), 2)
+  drift = est$par[5]
+
+
+  MLE.se = sqrt(diag(solve(est$hessian))) #hessian is the empirical Fisher info
+
+# display estimates
+  u = cbind(estimate=est$par, MLE.se, z=est$par/MLE.se, pvalue=2*(1-pnorm(abs(est$par/MLE.se))) )
+  rownames(u)=c("sigw","cR11", "cR22", "cR12", "drift")
+  round(u,4)  
+
+#view var(w_t) = Q = t(cR)%*%cR 
+  t(cR)%*%cR    
+
+
+#### Kalman smoothing: $x_{t|n}$ and $P_{t|n}$
+
+
+# run kalman smoothing/filtering/prediction for MLE:
+  ks = Ksmooth1(num,y,A,mu0,Sigma0,Phi=1,drift,0,cQ,cR,input)
+
+# Plot
+  xsm = ts(as.vector(ks$xs), start=c(2008,11),frequency = 12)
+  xsm = window(xsm, start=c(2009,2),frequency = 12)
+  rmspe = ts(sqrt(as.vector(ks$Ps)), start=c(2008,11),frequency = 12)
+  rmspe = window(rmspe, start=c(2009,2))
+
+#pdf(file="gtemp_sm.pdf", width=7.6, height=4)
+  par(mar=c(3,3,2,.5)+.5, mgp=c(1.6,.6,0))
+  plot(xsm, ylab="price", type='n')
+  grid(lty=1)
+  xx=c(time(xsm), rev(time(xsm)))
+  yy=c(xsm-1.96*rmspe, rev(xsm+1.96*rmspe))
+  polygon(xx, yy, border=NA, col=rgb(.6,.6,.6,alpha=.2)) 
+  lines(window(hpreal, start=c(2009,2)), pch=16, col=4)   # color helps here
+  lines(window(hpfitted, start=c(2009,2)), col=3)
+  lines(xsm, lwd=2)
+  lines(hpreal,  lwd=2, col = 4)
+  lines(hpfitted, lwd=2, col = 3)
+  legend('topleft', col=c(4,3,1), lty=1, lwd=2, 
+       legend=c("price", "fitted price", "Smoothed value"), bg='white', bty="n")  
+  title("Smoother with 95% Prediction Interval")
+#dev.off()
+
+  result = (ks$xp-ks$xs)/ks$xf
+
+  pief = result
+```
+sig = rep(0,length(13:124))
+for (i in 13:124){
+  sig[i-12] = sd(dif.data[((i-12):i),1])
+}
+
+sig = sig/sqrt(12)
+sig = sig[(length(sig)-60):length(sig)]
+pief = pief[(length(pief)-60):length(pief)]
+result = rep(0,60)
+interest = data[((126-60):126),9]
+for(i in 1:60){
+  result[i] = (0.3*(interest[i]/12)+0.7*(0.018/12)*(1-0.05/12))+0.083+0.0016+sig[i]-pief[i]
+}
+rpratio = data[(length(data[,10])-59):length(data[,10]),10:12]
+bubble = -((1/(result/rpratio[,1]))-rpratio[,2])
+
+library(urca)
+summary(ca.jo(data.frame(rpratio[,2],bubble),type = "trace",K = 5,spec = "longrun"))
+```
+
+#### Kalman Filtering: $x_{t|t}$ and $P_{t|t}$
+
+```{r}
+#pdf(file="gtemp_filter.pdf", width=7.6, height=4)
+# Plot
+xsm = ts(as.vector(ks$xf), start=c(2008,11))
+xsm = window(xsm,start= c(2009,2))
+rmspe = ts(sqrt(as.vector(ks$Pf)), start=c(2008,11))
+rmspe=window(rmspe, start=c(2009,2))
+
+plot(xsm,  ylim=c(60,130), ylab="Temperature Deviations", type='n')
+grid(lty=1)
+xx=c(time(xsm), rev(time(xsm)))
+yy=c(xsm-1.96*rmspe, rev(xsm+1.96*rmspe))
+polygon(xx, yy, border=NA, col=rgb(.6,.6,.6,alpha=.2)) 
+lines(window(hpreal, start=c(2009,2)), pch=16, col=4)   # color helps here
+lines(window(hpfitted, start=c(2009,2)), col=3)
+lines(xsm, lwd=2)
+lines(hpreal,  lwd=2, col = 4)
+lines(hpfitted, lwd=2, col = 3)
+legend('topleft', col=c(4,3,1), lty=1, lwd=2, 
+       legend=c("Land/Ocean", "Land Only", "Filtered value"), bg='white', bty="n")  
+title("Filter with 95% Prediction Interval")
+#dev.off()
+```
+#### Kalman prediction: $x_{t|t-1}$ and $P_{t|t-1}$
+
+```{r}
+#pdf(file="gtemp_predictor.pdf", width=7.6, height=4)
+# Plot
+xsm = ts(as.vector(ks$xp), start=c(2008,11))
+xsm = window(xsm, start=c(2009,2))
+rmspe = ts(sqrt(as.vector(ks$Pp)), start=c(2008,11))
+rmspe = window(rmspe, start=c(2009,2))
+
+plot(xsm,  ylim=c(60,130), ylab="Temperature Deviations", type='n')
+grid(lty=1)
+xx=c(time(xsm), rev(time(xsm)))
+yy=c(xsm-1.96*rmspe, rev(xsm+1.96*rmspe))
+polygon(xx, yy, border=NA, col=rgb(.6,.6,.6,alpha=.2)) 
+lines(window(hpreal, start=c(2008,12)), pch=16, col=4)   # color helps here
+lines(window(hpfitted, start=c(2008,12)), col=3)
+lines(xsm, lwd=2)
+lines(hpreal,  lwd=2, col = 4)
+lines(hpfitted, lwd=2, col = 3)
+legend('topleft', col=c(4,3,1), lty=1, lwd=2, 
+       legend=c("Land/Ocean", "Land Only", "Predicted value"), bg='white', bty="n")  
+title("Predictor with 95% Prediction Interval")
+```

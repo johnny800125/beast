@@ -1,0 +1,130 @@
+---
+title: "homework3"
+author: "張華軒"
+date: "2020/10/31"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r,echo = FALSE,include = FALSE}
+library(glmnet)
+library(pracma)
+set.seed(36)
+n = 100; sigma = 5; beta0 = c(2,-2,0.5,1,-3)
+cormat = diag(1,nrow = 5,ncol = 5);cormat[cormat ==0]= 0.5
+cholmat = chol(cormat)
+x = matrix(rnorm(5*n,0,1),ncol = 5)%*%cholmat
+err = rnorm(n,0,sigma)
+y = x%*%beta0+err
+
+
+
+```
+```{r,echo = FALSE,include=FALSE}
+sigmaj = sqrt((1/n)*sum((x-mean(x))^2))
+z = (x-mean(x))/sd(x)
+#check
+sum(z)
+sum(z^2)/5
+```
+
+- (2a)$$z\tilde{\beta} = x\hat{\beta}$$已知上式接著將$x$移到左邊，即為$$x^{-1}z\tilde{\beta} = \hat{\beta}$$其中x非方陣，因此使用廣義逆矩陣，將可求得$\hat{\beta}$ 。
+```{r,echo = FALSE}
+xy = glmnet(
+  x = x,
+  y = y,
+  alpha = 0
+)
+zy = glmnet(
+  x = z,
+  y = y-mean(y),
+  alpha = 0
+)
+betahat = pinv(x)%*%z%*%zy$beta
+betahat
+```
+
+- (2b)從loss function中對$\beta$做一階微分後等於零後，得知下式，因此將$\lambda$ 代入即可求得$\beta$。
+
+$$\tilde{{\beta_{\lambda}}}^{ridge} =(\frac{1}{N}Z^{T}Z+2\lambda I_p)^{-1}Z^T\tilde{Y} $$
+
+```{r,echo = FALSE}
+lambda = 2^(5:-10)
+
+y2 = y-mean(y)
+beta1 = sapply(1:16,function(x){
+  test = solve(1/n*t(z)%*%z+2*lambda[x]*diag(1,nrow  = 5))
+  beta1 = (test*(1/n))%*%t(z)%*%y2
+
+  
+  return(beta1)
+})
+beta2 = beta1
+for (i in 1:16){
+  beta2[,i] = beta1[,17-i] 
+}
+
+for( i in 1:5){
+  plot(beta2[i,],type = "o",pch = i+1,ylim = c(-5,5),xaxt ="n",ylab = "beta",xlab = "lambda")
+  par(new = T)
+}
+ axis(side=1,at=(1:16),labels = c("1/1024","1/512","1/256","1/128","1/64","1/32","1/16","1/8","1/4","1/2","1","2","4","8","16","32"),las=2)
+
+
+```
+
+- 從loss function對$\beta$做一階微分求取最大值$$\tilde{{\beta_{\lambda}}}^{ridge} = (\frac{1}{N}Z^{T}Z+2\lambda I_p)^{-1}Z^T\tilde{Y} $$因此將$\lambda$ 代入即可求得$\tilde{{\beta_{\lambda}}}^{ridge}$ 。
+
+- 將$x_i$,$y_i$及$\lambda =2$代入可得$\hat{{\beta}}(2)$
+```{r,echo = FALSE}
+test = solve(t(x)%*%x+2*diag(1,nrow  = 5))
+origbeta = test%*%t(x)%*%y
+
+origbeta
+
+```
+
+- (2c)
+- 1.兩者$\beta$式不一樣的，前面有提到本題的條件:$$\tilde{{\beta_{\lambda}}}^{ridge} = (\frac{1}{N}Z^{T}Z+2\lambda I_p)^{-1}Z^T\tilde{Y} $$而glmnet所使用的loss function有所差異，並非相同，因此兩者結果有所差異。
+
+- 2.glmnet會先對y進行標準化，再進行運算，而我們只有將y進行去中心化，因此兩者結果也會有所差異。
+
+```{r,echo = FALSE}
+pack = glmnet(x = z,y = y2,alpha = 0,lambda = lambda)
+plot(pack, xvar = "lambda", label = TRUE)
+
+```
+
+
+- 先後順序為package與2b題在給定$\lambda=\frac{1}{1024}$的$\beta$值，可以看出有些許的不同。
+
+```{r,echo = FALSE}
+pack$beta[,16]
+beta2[,1]
+
+```
+
+- (2d)
+
+- 我們將計算各$\lambda$之MSE，為不同的$\lambda$所對應不同的MSE的結果，再找出距離最小MSE一個標準差的$\lambda$。而我們將選擇對應最小MSE一個標準差內的最大$\lambda$，這樣在提高預測精準度時，同時也會對變數稍作限制。
+
+- 我們找出$\lambda_{1se} = 2^{-2}$ 而以下結果為MSE-MSE的一個標準差，而代表的順序為$\lambda=(2^{-10},.....2^5)$
+
+```{r,echo = FALSE}
+
+mse = {}
+
+for(i in 1:16){
+  yhat = z%*%beta2[,i]
+mse[i] = (1/n)*sum((yhat-y2)^2)
+}
+
+
+onese = min(mse)+sd(mse)
+mse-onese ###可知lambda.1se為2^(-2)
+
+```
